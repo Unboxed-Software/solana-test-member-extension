@@ -1,14 +1,25 @@
 import { initializeKeypair } from "@solana-developers/helpers";
-import { Cluster, Connection, Keypair, sendAndConfirmTransaction, SystemProgram, Transaction } from "@solana/web3.js";
+import {
+  Cluster,
+  Connection,
+  Keypair,
+  sendAndConfirmTransaction,
+  SystemProgram,
+  Transaction,
+} from "@solana/web3.js";
 import dotenv from "dotenv";
 import {
-	ExtensionType,
+  ExtensionType,
+  LENGTH_SIZE,
   TOKEN_2022_PROGRAM_ID,
+  TYPE_SIZE,
   createInitializeGroupInstruction,
   createInitializeGroupPointerInstruction,
+  createInitializeMetadataPointerInstruction,
   createInitializeMintInstruction,
   getMintLen,
 } from "@solana/spl-token";
+import { createInitializeInstruction, createUpdateFieldInstruction, pack, TokenMetadata } from "@solana/spl-token-metadata";
 dotenv.config();
 
 const CLUSTER: Cluster = "devnet";
@@ -34,30 +45,58 @@ async function main() {
 
   const maxMembers = 1;
 
-  const extensions: any[] = [ExtensionType.GroupPointer];
-//   const extensions: any[] = [ExtensionType.GroupPointer, ExtensionType.TokenGroup];
-//   const extensions: any[] = [ExtensionType.TokenGroup, ExtensionType.GroupPointer];
-//   const extensions: ExtensionType[] = [];
+  const metadata: TokenMetadata = {
+	  mint: mintKeypair.publicKey,
+	  name: "Test Group",
+	  symbol: "GRP",
+	  uri: "",
+	  additionalMetadata: []
+  };
+
+  //   const extensions: any[] = [ExtensionType.GroupPointer];
+  const extensions: any[] = [
+    ExtensionType.GroupPointer,
+    ExtensionType.MetadataPointer,
+  ];
+  //   const extensions: any[] = [ExtensionType.GroupPointer, ExtensionType.TokenGroup];
+  //   const extensions: any[] = [ExtensionType.TokenGroup, ExtensionType.GroupPointer];
+  //   const extensions: ExtensionType[] = [];
+
+  const metadataLen = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
   const mintLength = getMintLen(extensions);
+  const totalLen = mintLength + metadataLen;
 
   const mintLamports =
-    await connection.getMinimumBalanceForRentExemption(mintLength);
+    await connection.getMinimumBalanceForRentExemption(totalLen);
 
   console.log("Creating a transaction with group instruction... ");
 
   const mintTransaction = new Transaction().add(
-	SystemProgram.createAccount({
-		fromPubkey: payer.publicKey,
-		newAccountPubkey: mint,
-		space: mintLength,
-		lamports: mintLamports,
-		programId: TOKEN_2022_PROGRAM_ID,
-	}),
-	createInitializeGroupPointerInstruction(
+    SystemProgram.createAccount({
+      fromPubkey: payer.publicKey,
+      newAccountPubkey: mint,
+      space: mintLength,
+      lamports: mintLamports,
+      programId: TOKEN_2022_PROGRAM_ID,
+    }),
+    createInitializeGroupPointerInstruction(
+      mintKeypair.publicKey,
+      updateAuthority.publicKey,
+      mintKeypair.publicKey
+    ),
+	createInitializeMetadataPointerInstruction(
 		mintKeypair.publicKey,
 		updateAuthority.publicKey,
 		mintKeypair.publicKey,
+		TOKEN_2022_PROGRAM_ID
 	),
+    createInitializeMintInstruction(
+      mint,
+      decimals,
+      mintAuthority.publicKey,
+      null,
+      TOKEN_2022_PROGRAM_ID
+    ),
 	createInitializeGroupInstruction({
 		group: mintKeypair.publicKey,
 		maxSize: maxMembers,
@@ -65,8 +104,7 @@ async function main() {
 		mintAuthority: mintAuthority.publicKey,
 		programId: TOKEN_2022_PROGRAM_ID,
 		updateAuthority: updateAuthority.publicKey,
-	}),
-	createInitializeMintInstruction(mint, decimals, mintAuthority.publicKey, null, TOKEN_2022_PROGRAM_ID),
+	  }),
   );
 
   console.log("Sending create mint transaction...");
@@ -78,7 +116,7 @@ async function main() {
   );
 
   console.log(
-	`Check the transaction at: https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`
+    `Check the transaction at: https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`
   );
 }
 
